@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.4.0
+
+- Running `agentharden` in a terminal now copies the fix prompt to the clipboard by itself and keeps one-key
+  options open: `c` copies it again, `r` scans again, shows the level change and copies the new prompt, `o` opens
+  the prompt, and any other key quits. The loop is: run it, paste into any AI coding tool, press `r` when the AI is
+  done, repeat.
+- The keys appear only for a person at a terminal: not in CI, not in a pipe, not with `--fail-on`, `--strict`,
+  `--json`, `--print-prompt` or `-q`, and the pre-commit hook passes `--no-copy`. Exit codes are unchanged.
+- "Copied" is printed only when a clipboard tool accepted the text. agentharden tries pbcopy, wl-copy, xclip, xsel
+  and clip in turn, and sends clip.exe UTF-16 so characters like `·` and `→` survive on Windows.
+- The summary no longer suggests one tool by name: it says to paste the prompt into any AI coding tool, and points
+  to the security audit when there are no scanner tasks.
+
+## 0.3.0
 
 - `FIX_PROMPT.md` now has a **Security audit** section, so the prompt you paste into any AI coding tool covers the
   flaws a scanner cannot see. It holds a map of the attack surface (routes with file, line, visible auth check and

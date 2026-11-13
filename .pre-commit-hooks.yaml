@@ -1,5 +1,5 @@
 - id: agentharden
   name: agentharden security scan
-  entry: agentharden scan --no-external --fail-on high
+  entry: agentharden scan --no-external --fail-on high --no-copy
   language: python
   pass_filenames: false

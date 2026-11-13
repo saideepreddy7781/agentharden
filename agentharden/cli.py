@@ -74,7 +74,9 @@ def main(argv=None) -> int:
     s.add_argument("--no-baseline", action="store_true", help="ignore the baseline file")
     s.add_argument("--sarif", action="store_true", help="also write results.sarif (GitHub code scanning)")
     s.add_argument("--json", action="store_true", help="print the JSON report to stdout")
-    s.add_argument("--copy", action="store_true", help="copy the prompt to the clipboard")
+    s.add_argument("--copy", action="store_true", help="copy the prompt to the clipboard (automatic in a terminal)")
+    s.add_argument("--no-copy", action="store_true",
+                   help="in a terminal, don't copy the prompt or show the copy / rescan keys")
     s.add_argument("--no-audit", action="store_true",
                    help="leave the security-audit section (routes, access control, CSRF, abuse) out of the prompt")
     s.add_argument("--print-prompt", action="store_true", help="print the prompt to stdout instead of the summary")
@@ -184,6 +186,27 @@ def _baseline_path(a, root: str):
 
 
 def cmd_scan(a) -> int:
+    rc, text, prompt_path, lvl = _scan_once(a)
+    if _interactive(a):
+        return _menu(a, rc, text, prompt_path, lvl)
+    if a.copy:
+        _copy(text, a.quiet)
+    return rc
+
+
+def _interactive(a) -> bool:
+    """A person at a terminal ran a plain scan: copy the prompt and offer the key menu. Never in CI, in pipes, in
+    git hooks (`--fail-on`), or with output flags."""
+    if a.no_copy or a.quiet or a.json or a.print_prompt or a.fail_on or a.strict or os.environ.get("CI"):
+        return False
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
+def _scan_once(a) -> tuple:
+    """Scan, write FIX_PROMPT.md and report.json, print the summary. Returns (exit code, prompt, path, level)."""
     _require_dir(a.path)
     root = os.path.abspath(a.path)
     if a.diff is not None and not a.diff.strip():
@@ -244,21 +267,20 @@ def cmd_scan(a) -> int:
         print(output.clean(text, multiline=True))
     elif not a.quiet:
         print(output.render(result, output.rel(prompt_path), target, n_tasks, show=10_000 if a.verbose else 15,
-                            verbose=a.verbose, scope=" · ".join(scope), level_findings=level_findings))
+                            verbose=a.verbose, scope=" · ".join(scope), level_findings=level_findings,
+                            audit=not getattr(a, "no_audit", False)))
     if a.quiet or stdout_only:
         for line in output.blind_spot_lines(result):
             print(line, file=sys.stderr)
-    if a.copy:
-        _copy(text, a.quiet)
-
+    lvl = report["level"]
     if out_error is not None:
         print(f"agentharden: {output.clean(out_error)}", file=sys.stderr)
-        return 2
+        return 2, text, None, lvl
     if a.fail_on and any(f.counts and f.rank >= SEV_RANK[a.fail_on] for f in result.findings):
-        return 1
+        return 1, text, prompt_path, lvl
     if a.strict and result.gaps:
-        return 3
-    return 0
+        return 3, text, prompt_path, lvl
+    return 0, text, prompt_path, lvl
 
 
 def cmd_fix(a) -> int:
@@ -397,14 +419,113 @@ def cmd_rules(a) -> int:
     return 0
 
 
-def _copy(text: str, quiet: bool) -> None:
-    for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"], ["clip"]):
-        if shutil.which(cmd[0]):
-            subprocess.run(cmd, input=text.encode("utf-8", "replace"), check=False, timeout=30)
-            if not quiet:
-                print(output.c("  ✓ prompt copied to clipboard", "32"))
-            return
-    print("agentharden: no clipboard tool found (pbcopy / wl-copy / xclip)", file=sys.stderr)
+CLIPBOARD = (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"],
+             ["clip"])
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put text on the system clipboard. True only if a clipboard tool accepted it."""
+    for cmd in CLIPBOARD:
+        if not shutil.which(cmd[0]):
+            continue
+        try:
+            data = text.encode("utf-16") if cmd[0] == "clip" else text.encode("utf-8", "replace")  # clip.exe: BOM
+            proc = subprocess.run(cmd, input=data, check=False, timeout=30,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode == 0:
+            return True
+    return False
+
+
+def _copy(text: str, quiet: bool) -> bool:
+    if copy_to_clipboard(text):
+        if not quiet:
+            print(output.c("  ✓ prompt copied to clipboard", "32"))
+        return True
+    print("agentharden: could not copy: no working clipboard tool (pbcopy, wl-copy, xclip, xsel or clip)",
+          file=sys.stderr)
+    return False
+
+
+MENU = "  [c] copy again   [r] scan again   [o] open the prompt   [q] quit"
+
+
+def read_key() -> str:
+    """One keypress, without waiting for Enter where the terminal allows it."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            return msvcrt.getwch()
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            return sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    except (ImportError, OSError, ValueError):
+        return (input() or "q")[:1]
+
+
+def open_file(path: str) -> bool:
+    if os.environ.get("TERM_PROGRAM") == "vscode" and shutil.which("code"):
+        cmd = ["code", path]
+    elif sys.platform == "darwin":
+        cmd = ["open", "-t", path]
+    elif os.name == "nt":
+        try:
+            os.startfile(path)  # noqa: S606 - opens our own prompt file in the user's editor
+            return True
+        except OSError:
+            return False
+    elif shutil.which("xdg-open"):
+        cmd = ["xdg-open", path]
+    else:
+        return False
+    try:
+        return subprocess.run(cmd, check=False, timeout=30, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _menu(a, rc: int, text: str, prompt_path, lvl: int) -> int:
+    """After an interactive scan: copy the prompt, then copy again / rescan / open on a single key."""
+    def copied_line():
+        if copy_to_clipboard(text):
+            print(output.c("  ✓ Prompt copied. Paste it into your AI coding tool: Cursor, Copilot, Claude Code, "
+                           "Codex, Windsurf.", "1;32"))
+        else:
+            where = output.rel(prompt_path) if prompt_path else "the prompt file"
+            print(output.c(f"  Could not reach the clipboard. Open {where} and copy it from there.", "33"))
+
+    copied_line()
+    while True:
+        print("\n" + output.c(MENU, "36"), flush=True)
+        try:
+            key = read_key().lower()
+        except (KeyboardInterrupt, EOFError):
+            key = "q"
+        if key == "c":
+            copied_line()
+        elif key == "o":
+            if not (prompt_path and open_file(prompt_path)):
+                print(f"  Could not open it. The prompt is at {output.rel(prompt_path or '.')}")
+        elif key == "r":
+            before = lvl
+            print()
+            rc, text, prompt_path, lvl = _scan_once(a)
+            change = "no change" if lvl == before else ("up" if lvl > before else "down")
+            print(output.c(f"  Level L{before} {LEVELS[before]} → L{lvl} {LEVELS[lvl]} ({change})",
+                           "1;32" if lvl > before else "1;33" if lvl == before else "1;31"))
+            copied_line()
+        else:
+            print()
+            return rc
 
 
 def cmd_update(a) -> int:

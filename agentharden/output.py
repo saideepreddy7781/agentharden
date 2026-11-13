@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import stat
 import sys
 import tempfile
@@ -163,7 +162,7 @@ def _row(x, width: int) -> str:
 
 
 def render(result, prompt_path: str, target: int, n_tasks: int, show: int = 15, verbose: bool = False,
-           scope: str = "", level_findings: list | None = None) -> str:
+           scope: str = "", level_findings: list | None = None, audit: bool = False) -> str:
     """The terminal summary. level_findings: what the level is computed on, when it differs from the list shown
     (with --diff the list is changed lines only, but the level describes the whole repository)."""
     shown = result.findings
@@ -237,10 +236,13 @@ def render(result, prompt_path: str, target: int, n_tasks: int, show: int = 15, 
     out.append(f"  {c('Hidden', '2')}    {hidden_text(result)}")
     out.append("")
     if n_tasks:
-        quoted = clean(shlex.quote(prompt_path))
         out.append(f"  {c('→', '1;36')} Next: {c(f'L{target} {LEVELS[target]}', '1')}: {n_tasks} task"
                    f"{'s' if n_tasks != 1 else ''} written to {c(clean(prompt_path), '4')}")
-        out.append(c(f'    claude "$(cat {quoted})"', "36") + c("     # or paste into Cursor / Copilot / any LLM", "2"))
+        out.append(c("    The prompt also holds a security audit for flaws a scanner cannot see." if audit else
+                     "    Paste it into any AI coding tool: Cursor, Copilot, Claude Code, Codex, Windsurf.", "2"))
+    elif audit:
+        out.append(f"  {c('→', '1;36')} Next: no scanner tasks at this level. The security audit is in "
+                   f"{c(clean(prompt_path), '4')}")
     elif cur == 4 and not gaps:
         out.append(f"  {c('→', '1;36')} Top level reached. Keep it there: add `agentharden scan . --fail-on low` to CI.")
     out.append("")

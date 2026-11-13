@@ -72,10 +72,25 @@ The package called `hardn` on PyPI is unrelated. agentharden was named `hardn` u
 
 ## Use it
 
+In your project folder, run `agentharden`. It scans everything, shows the level, and copies the fix prompt to
+your clipboard. Paste it into Cursor, Copilot, Claude Code, Codex, Windsurf or any AI coding tool and let it work.
+The scan stays open with one-key options:
+
+```
+  ✓ Prompt copied. Paste it into your AI coding tool: Cursor, Copilot, Claude Code, Codex, Windsurf.
+
+  [c] copy again   [r] scan again   [o] open the prompt   [q] quit
+```
+
+When the AI is done, press `r`: agentharden scans again, shows the level change (`L0 Exposed → L2 Baseline (up)`)
+and copies a fresh prompt with whatever is left. Repeat until you reach the level you want. The keys appear only
+when you run it yourself in a terminal, never in CI, in a pipe, in a git hook or with `--fail-on`; `--no-copy`
+turns them off.
+
 ```bash
-agentharden                                  # scan the current directory, write .agentharden/FIX_PROMPT.md
+agentharden                                  # scan, copy the prompt, then [c] copy again [r] scan again [o] open
 agentharden ./app --target hardened          # aim for a specific level
-agentharden scan --print-prompt | claude -p  # pipe the prompt into an agent yourself
+agentharden scan --print-prompt > p.md      # the prompt on stdout, for scripts
 agentharden fix                              # scan → agent fixes → re-scan, up to 3 rounds, on a new branch
 agentharden fix --agent codex --test "npm test"   # any agent; test failures go back into the next round
 agentharden scan ./someone-elses-repo --untrusted # ignore the repo's own ignore file, baseline and suppressions
