@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1
+
+- `agentharden fix` now upgrades vulnerable npm packages itself, before the agent starts. In 0.2.0 a dependency
+  finding could not be fixed at all: Claude Code in `acceptEdits` mode may not run npm, and a lockfile cannot be
+  edited by hand. agentharden runs `npm install` for direct dependencies and `npm update` for transitive ones,
+  with `--package-lock-only --ignore-scripts --no-audit --no-fund`, so npm downloads no packages and runs no
+  scripts. When that clears every in-scope finding, the agent is not started.
+- The step is skipped, with the reason printed, for major upgrades, a `.npmrc` in the repo, git, URL or path
+  dependencies, npm aliases, and non-npm lockfiles. Those findings go to the agent as before. `--no-deps` turns the
+  step off.
+- The confirm prompt names the folder ("edit files in resume-app/?") instead of printing "in .?", and says when
+  npm will run.
+- After an npm upgrade, `fix` prints the `npm ci` command to run, because node_modules is not touched.
+
 ## 0.2.0: first release as agentharden
 
 The project was called `hardn` until this release. The PyPI name `hardn` and the `hardn` command belong to an

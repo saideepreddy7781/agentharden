@@ -12,6 +12,10 @@ the guarantees, and a break in any of them is in scope:
 
 - Scanning never runs code from the scanned repo, including programs named in its `.git/config`.
 - Scans never use the network. Only `agentharden update` downloads data (OSV.dev, CISA KEV, optional Semgrep rules).
+  `agentharden fix` also runs npm, after you confirm, to read package versions from the registry.
+- npm run by `agentharden fix` downloads no package code and runs no scripts (`--package-lock-only
+  --ignore-scripts`). It does not run at all when the repo has a `.npmrc` or a git, URL or path dependency, and
+  package names and versions are checked before they reach the command line.
 - Secret values never reach the terminal, `FIX_PROMPT.md`, `report.json`, SARIF or the baseline.
 - Files are read only inside the scanned folder, and output is never written through a symlink.
 - Text from the scanned repo reaches the agent only inside labelled data blocks it cannot break out of.

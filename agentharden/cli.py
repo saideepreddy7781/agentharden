@@ -99,6 +99,8 @@ def main(argv=None) -> int:
                     help=f"seconds allowed for the --test command (default {fix.TEST_TIMEOUT})")
     fx.add_argument("--baseline", metavar="FILE", help=f"baseline file (default: <path>/{baseline.FILENAME} if present)")
     fx.add_argument("--no-baseline", action="store_true", help="ignore the baseline file")
+    fx.add_argument("--no-deps", action="store_true",
+                    help="don't run npm to upgrade vulnerable packages; leave them to the agent")
 
     b = sub.add_parser("baseline", help=f"record current findings in {baseline.FILENAME} (commit it)")
     b.add_argument("path", nargs="?", default=".")
@@ -261,7 +263,8 @@ def cmd_fix(a) -> int:
     return fix.run(a.path, agent=a.agent, target=TARGETS[a.target] if a.target else None, max_rounds=a.rounds,
                    test_cmd=a.test, external=not a.no_external, yes=a.yes, branch=not a.no_branch,
                    allow_dirty=a.allow_dirty, max_tasks=a.max_tasks, timeout=a.timeout,
-                   test_timeout=a.test_timeout, baseline_file=a.baseline, use_baseline=not a.no_baseline)
+                   test_timeout=a.test_timeout, baseline_file=a.baseline, use_baseline=not a.no_baseline,
+                   upgrade_deps=not a.no_deps)
 
 
 def cmd_baseline(a) -> int:

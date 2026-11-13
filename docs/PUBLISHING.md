@@ -1,6 +1,6 @@
 # Publishing agentharden
 
-Everything is automated by `.github/workflows/release.yml`: pushing a tag like `v0.2.0` runs the tests on
+Everything is automated by `.github/workflows/release.yml`: pushing a tag like `v0.2.1` runs the tests on
 Linux/macOS/Windows, publishes to PyPI, and creates a GitHub Release with standalone binaries,
 `agentharden.pyz`, and `SHA256SUMS`. You only do the one-time setup below.
 
@@ -11,7 +11,7 @@ Linux/macOS/Windows, publishes to PyPI, and creates a GitHub Release with standa
 
 ```bash
 git add -A
-git commit -m "agentharden 0.2.0"
+git commit -m "agentharden 0.2.1"
 gh repo create saideepreddy7781/agentharden --public --source . --push
 ```
 
@@ -41,9 +41,9 @@ Friends can already install it now:
 
 ```bash
 # bump the version in agentharden/__init__.py and add a CHANGELOG entry, then:
-git commit -am "release 0.2.0"
-git tag v0.2.0
-git push origin main v0.2.0
+git commit -am "release 0.2.1"
+git tag v0.2.1
+git push origin main v0.2.1
 ```
 
 Watch it under **Actions → release**. When it's green:
@@ -71,9 +71,9 @@ form, the release workflow attaches the binaries to that same release automatica
 gh repo create saideepreddy7781/homebrew-tap --public --clone && cd homebrew-tap
 mkdir -p Formula && cp ../agentharden/packaging/homebrew/agentharden.rb Formula/
 # set sha256 to the sdist hash from PyPI:
-curl -s https://pypi.org/pypi/agentharden/0.2.0/json \
+curl -s https://pypi.org/pypi/agentharden/0.2.1/json \
   | python3 -c "import json,sys; print([u['digests']['sha256'] for u in json.load(sys.stdin)['urls'] if u['packagetype']=='sdist'][0])"
-git add -A && git commit -m "agentharden 0.2.0" && git push
+git add -A && git commit -m "agentharden 0.2.1" && git push
 ```
 
 Users: `brew install saideepreddy7781/tap/agentharden`

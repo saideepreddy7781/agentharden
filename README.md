@@ -101,6 +101,11 @@ Exit codes: 0 clean, 1 a finding at or above `--fail-on`, 2 an error, 3 blind sp
 - Claude Code runs with `--setting-sources user --strict-mcp-config`, so the repo's hooks, permission rules and MCP
   servers do not load. Codex runs with `--sandbox workspace-write`.
 - The agent and its child processes are killed on timeout and on Ctrl-C.
+- An agent cannot upgrade a package, because the lockfile needs hashes from the registry. So before the agent
+  starts, agentharden runs `npm install` or `npm update` itself with `--package-lock-only --ignore-scripts`: npm
+  rewrites package.json and the lockfile, downloads no packages and runs no scripts. It does this only inside the
+  installed major version, and never when the repo has a `.npmrc` or git dependencies. The confirm prompt lists
+  the commands; `--no-deps` turns the step off.
 
 ### In CI
 
@@ -193,6 +198,8 @@ leaving out advisories published after the local database was downloaded (measur
   and some server-side template injection.
 - The cheat check misses semantic tricks such as wrapping a dangerous call in `if False:`. Review the diff.
 - aider and Gitleaks read some config from the scanned repo with no switch to stop them; agentharden warns.
+- `agentharden fix` upgrades npm packages itself. Major upgrades, and packages managed by yarn, pnpm, pip, Poetry,
+  uv, Go or Cargo, still go to the agent, which can edit a version pin but cannot regenerate a lockfile.
 
 ## FAQ
 

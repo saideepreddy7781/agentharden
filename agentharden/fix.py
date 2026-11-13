@@ -7,6 +7,9 @@ Safety model:
 - guard.py snapshots the tree first and checks each round's diff for gaming: added suppression comments,
   edited ignore/baseline/scanner files, deleted or emptied files that had findings, deleted or gutted tests,
   and edits to the test command's definition. A round with a violation earns no level credit.
+- Vulnerable npm packages are upgraded by agentharden itself before the first round (depfix.py), with
+  `--package-lock-only --ignore-scripts`, because an agent cannot regenerate a lockfile. The confirm prompt lists
+  the commands, and `--no-deps` turns the step off.
 - The baseline is honoured the same way `agentharden scan` honours it, and it is read once, before the agent runs.
 - The agent and the test command run in their own process group, with a timeout. The whole group is killed
   on timeout, on Ctrl-C, and when the agent exits, so no child process keeps editing the tree.
@@ -39,7 +42,7 @@ import signal
 import subprocess
 import sys
 
-from . import baseline, gitsafe, guard, output, prompt, scanner, secrets
+from . import baseline, depfix, gitsafe, guard, output, prompt, scanner, secrets
 from .scoring import LEVELS, counted, level, min_rank_for
 
 AGENTS = {
@@ -244,7 +247,7 @@ def _revert_note(violations: list) -> str:
 def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, test_cmd: str | None = None,
         external: bool = True, yes: bool = False, branch: bool = True, allow_dirty: bool = False,
         max_tasks: int = 15, timeout: int = 1800, test_timeout: int = TEST_TIMEOUT, baseline_file: str | None = None,
-        use_baseline: bool = True) -> int:
+        use_baseline: bool = True, upgrade_deps: bool = True) -> int:
     root = os.path.abspath(root)
     say = _say
     if max_rounds < 1:
@@ -281,6 +284,25 @@ def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, t
             say(f"    - {_clean(gap)}")
         return 1
 
+    dep_steps, npm = [], None
+    if upgrade_deps:
+        in_scope = [f for f in counted(start_findings) if f.rank >= min_rank_for(target)]
+        dep_steps, dep_skipped = depfix.plan(root, in_scope)
+        if dep_steps:
+            npm = depfix.npm_path(root, child_env(None))
+            if npm is None:
+                say(output.c("  npm was not found on PATH (or it is inside this repository), so agentharden cannot "
+                             "upgrade the vulnerable npm packages itself. The agent gets them as tasks.", "33"))
+                dep_steps = []
+        if dep_steps:
+            say("  First agentharden upgrades vulnerable npm packages itself. npm reads versions from the registry "
+                "and rewrites package.json and the lockfile; it downloads no packages and runs no scripts:")
+            for step in dep_steps:
+                say(f"    {_clean(step.shown())}")
+        for sk in dep_skipped[:10]:
+            say(f"  Not upgraded automatically: {_clean(sk.package)} {_clean(sk.version)} in {_clean(sk.file)}: "
+                f"{_clean(sk.reason)}.")
+
     found = _agent_config(root, name)
     if found:
         say(output.c("  Warning: this repository ships files that coding agents read as instructions or settings: "
@@ -296,7 +318,9 @@ def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, t
         if not sys.stdin.isatty():
             raise FixError("refusing to let an agent edit files without confirmation; pass --yes in non-interactive use.")
         try:
-            answer = input(f"  Let `{_clean(' '.join(shown_cmd))}` edit files in {output.rel(root)}? [y/N] ")
+            where = os.path.basename(root.rstrip(os.sep)) or root
+            ask = "Run the npm commands above and let" if dep_steps else "Let"
+            answer = input(f"  {ask} `{_clean(' '.join(shown_cmd))}` edit files in {_clean(where)}/? [y/N] ")
         except EOFError:
             answer = ""
         if answer.strip().lower() not in ("y", "yes"):
@@ -319,8 +343,11 @@ def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, t
         state = {"root": root, "snap": snap, "cmd": cmd, "name": name, "target": target, "max_tasks": max_tasks,
                  "timeout": timeout, "test_cmd": test_cmd, "test_timeout": test_timeout, "external": external,
                  "known": known, "prompt_file": prompt_file, "created": created, "switch_back": switch_back,
-                 "orig_name": orig_name, "allow_dirty": allow_dirty}
-        return _loop(state, result, max_rounds, start_findings, start_level, start_count)
+                 "orig_name": orig_name, "allow_dirty": allow_dirty, "npm_folders": []}
+        count = start_count
+        if dep_steps:
+            result, count = _upgrade_deps(state, dep_steps, npm, start_count)
+        return _loop(state, result, max_rounds, start_findings, start_level, count)
     except KeyboardInterrupt:
         say(output.c("\n  Interrupted. The agent and its child processes were stopped; files may be half edited.",
                      "33"))
@@ -332,12 +359,34 @@ def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, t
         guard.close(snap, keep=allow_dirty)
 
 
+def _upgrade_deps(st: dict, steps: list, npm: str, start_count: int) -> tuple:
+    """Run the npm upgrades, re-scan, and return (result, in-scope count)."""
+    say = _say
+    root = st["root"]
+    say(f"\n  {output.c('Dependencies', '1;36')} · {len(steps)} npm command(s)\n")
+    failed = depfix.run(root, steps, npm, child_env(None), _spawn, secrets.redact_text, say)
+    if guard.current_tree(st["snap"]) != st["snap"].tree:
+        st["npm_folders"] = sorted({s.folder for s in steps if s not in failed})
+    result = _scan(root, st["external"], st["known"])
+    count = _in_scope(result.findings, st["target"])
+    left = {(f.file, (f.extra or {}).get("package")) for f in result.findings if f.category == "dependency"}
+    for step in steps:
+        for pkg, old, fixed in step.packages:
+            still = any(p == pkg and fl.rpartition("/")[0] == step.folder for fl, p in left)
+            mark = output.c("still vulnerable", "33") if still else output.c(f"fixed (now >= {fixed})", "32")
+            say(f"    {_clean(pkg)} {_clean(old)}: {mark}")
+    say(f"  In-scope findings: {start_count} → {output.c(str(count), '1')}")
+    return result, count
+
+
 def _loop(st: dict, result, max_rounds: int, start_findings: list, start_level: int, start_count: int) -> int:
     say = _say
     root, snap, target = st["root"], st["snap"], st["target"]
     created, switch_back, test_cmd = st["created"], st["switch_back"], st["test_cmd"]
     agent_env, test_env = child_env(st["name"]), child_env(None)
     prev_count, note, tests_ok, violations, committed = start_count, "", True, [], False
+    if start_count == 0:
+        max_rounds = 0  # the dependency upgrades already cleared everything in scope; no agent needed
     for rnd in range(1, max_rounds + 1):
         text, _, n_tasks = prompt.build(result, target=target, max_tasks=st["max_tasks"])
         if note:
@@ -413,16 +462,24 @@ def _loop(st: dict, result, max_rounds: int, start_findings: list, start_level: 
     stat = _git(root, "status", "--short", check=False).strip().splitlines()[:40]
     if stat:
         say("\n" + "\n".join("    " + _clean(ln) for ln in stat))
+    for folder in st.get("npm_folders", []):
+        where = f"cd {folder} && " if folder else ""
+        say(f"\n  node_modules was not touched. Install what the lockfile now says before you test: "
+            f"`{_clean(where)}npm ci`")
     say("\n  Next: review with `git diff`, run your app/tests, then commit.")
-    say("  If the agent reported false positives, check each one yourself. To accept one, add a `agentharden:ignore` "
-        "comment with the reason on that line, or record it with `agentharden baseline`. agentharden fix never does that for you.")
+    if max_rounds:
+        say("  If the agent reported false positives, check each one yourself. To accept one, add a `agentharden:ignore` "
+            "comment with the reason on that line, or record it with `agentharden baseline`. agentharden fix never does "
+            "that for you.")
     undo = _undo(snap, created, switch_back, st["allow_dirty"])
     if undo:
         say(f"  Undo everything: `{undo}`")
         if st["allow_dirty"]:
             say("  (This restores the files as they were when agentharden fix started, your uncommitted work included. "
                 "It reads a snapshot in your temp directory, so run it before that is cleared.)")
-    say("  Open items and human-only steps (credential rotation) are in .agentharden/FIX_PROMPT.md\n")
+    if max_rounds:
+        say("  Open items and human-only steps (credential rotation) are in .agentharden/FIX_PROMPT.md")
+    say("")
     return 0 if reached else 1
 
 
