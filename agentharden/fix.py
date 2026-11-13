@@ -311,7 +311,7 @@ def run(root: str, agent=None, target: int | None = None, max_rounds: int = 3, t
         if name == "claude":
             say("  Claude Code is started with --setting-sources user, so the repository's .claude settings and "
                 "hooks do not load. CLAUDE.md still does.")
-    say(f"  The agent{' and the tests' if test_cmd else ''} run with a reduced environment: no cloud keys or "
+    say(f"  {'The agent and the tests run' if test_cmd else 'The agent runs'} with a reduced environment: no cloud keys or "
         f"tokens beyond the agent's own. Add variable names with {PASS_ENV}=NAME,NAME.")
 
     if not yes:
@@ -459,7 +459,7 @@ def _loop(st: dict, result, max_rounds: int, start_findings: list, start_level: 
         _drop_branch(root, created, switch_back)
         say(f"  No files changed. Back on {_clean(st['orig_name'])}; removed branch {created}.\n")
         return 0 if reached else 1
-    stat = _git(root, "status", "--short", check=False).strip().splitlines()[:40]
+    stat = [ln for ln in _git(root, "status", "--short", check=False).splitlines() if ln.strip()][:40]
     if stat:
         say("\n" + "\n".join("    " + _clean(ln) for ln in stat))
     for folder in st.get("npm_folders", []):
