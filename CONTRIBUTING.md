@@ -6,7 +6,7 @@ agentharden has no runtime dependencies. Please keep it that way: standard libra
 git clone https://github.com/saideepreddy7781/agentharden && cd agentharden
 python -m pip install -e .                       # needs pip 21.3 or newer; `pip install .` works on any pip
 python -m unittest discover -s tests             # about 20 seconds
-python benchmarks/attacks/run.py                 # fix-loop safety: must stay 36 of 36
+python benchmarks/attacks/run.py                 # fix-loop safety: must stay 37 of 37
 python benchmarks/detection/run.py               # detection accuracy, tuning and holdout tables
 python -m agentharden examples/vulnerable-app    # try it on the demo app
 ruff check .                                     # lint (pip install ruff)
@@ -27,7 +27,7 @@ real key format. `python benchmarks/detection/run.py --extract /tmp/corpus` writ
 
 ## Changing the fix loop
 
-Anything that touches `prompt.py`, `fix.py` or `guard.py` must keep `benchmarks/attacks/run.py` at 36 of 36. A new
+Anything that touches `prompt.py`, `fix.py` or `guard.py` must keep `benchmarks/attacks/run.py` at 37 of 37. A new
 way to cheat or to inject instructions is a welcome contribution: add it as a case, with a scripted agent under
 `benchmarks/attacks/agents/`. Never call a real AI agent from a test or benchmark.
 

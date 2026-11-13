@@ -272,6 +272,7 @@ def report_dict(result, meta: dict | None = None, level_findings: list | None = 
         "level_scope": "repository" if level_findings is not None else "findings",
         "complete": not gaps, "gaps": gaps, "untrusted": bool(getattr(result, "untrusted", False)),
         "hidden": dict(result.hidden or {}), "skipped": getattr(result, "skipped", None) or {},
+        "surface": getattr(result, "surface", None) or {},
         "files_scanned": result.files_scanned, "duration_seconds": round(result.duration, 3),
         "outside_app": {"count": len(outside), "by_context": by_ctx},
         "scope": meta or {}, "findings": [dict(x.to_dict(), counts=x.counts) for x in f],

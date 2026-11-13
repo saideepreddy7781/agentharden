@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+- `FIX_PROMPT.md` now has a **Security audit** section, so the prompt you paste into any AI coding tool covers the
+  flaws a scanner cannot see. It holds a map of the attack surface (routes with file, line, visible auth check and
+  URL ids, plus uploads, downloads, outbound requests, AI API calls, CORS, token and password code), a checklist
+  built on OWASP ASVS 5.0 and the CWE Top 25, notes for each detected framework, and rules that make every issue
+  cite file:line and the attacker's request and every fix come with a test. The report ends with a verdict per route.
+- Routes are found for FastAPI, Flask, Django, Express, Fastify, Koa, Hono, NestJS, Next.js (route handlers,
+  `pages/api`, server actions), Spring, Rails, Laravel and Go. Browser code that calls an API is not counted as a
+  route. `report.json` includes the map under `surface`.
+- `agentharden scan --no-audit` leaves the section out. `agentharden fix` never includes it.
+- The two display fixes in `agentharden fix` output from 0.2.1 are included.
+- Attack benchmark: a new injection case puts a fence-breaking instruction in a route path. 37 of 37 pass.
+
 ## 0.2.1
 
 - `agentharden fix` now upgrades vulnerable npm packages itself, before the agent starts. In 0.2.0 a dependency

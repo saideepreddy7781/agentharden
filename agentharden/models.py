@@ -55,6 +55,7 @@ class ScanResult:
     duration: float
     gaps: list = field(default_factory=list)  # checks that could not run; each one could change the grade
     hidden: dict = field(default_factory=dict)  # what the repo's own config suppressed, e.g. {"inline": 3}
+    surface: dict = field(default_factory=dict)  # routes and sensitive areas for the audit (audit.surface)
 
 
 def cap_severity(sev: str, cap: str) -> str:

@@ -4,7 +4,7 @@ import os
 import re
 import time
 
-from . import code_rules, context, deps, engines, posture, secrets, taint_js, taint_py, walker
+from . import audit, code_rules, context, deps, engines, posture, secrets, taint_js, taint_py, walker
 from . import stack as stack_mod
 from .models import SEV_RANK, ScanResult
 
@@ -117,7 +117,7 @@ def run(root: str, external: bool = True, log=lambda *_: None, untrusted: bool =
     hidden = {"inline": 0, "ignorefile": 0} if untrusted else {
         "inline": _inline_hidden(files, root), "ignorefile": walk.ignored}
     result = ScanResult(root=root, stack=stack, findings=findings, engines=statuses, files_scanned=len(files),
-                        duration=time.time() - t0, gaps=gaps, hidden=hidden)
+                        duration=time.time() - t0, gaps=gaps, hidden=hidden, surface=audit.surface(files))
     result.skipped = walk.to_dict()
     result.untrusted = untrusted
     return result

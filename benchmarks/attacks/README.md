@@ -26,7 +26,8 @@ names with newlines and are skipped on Windows.
 **Injection** (`cases/injection.json`). Each repository puts an instruction-shaped payload where agentharden
 copies text from: a code line, a trailing comment, a file name containing newlines, an env file name, an npm
 dependency name, an identifier in a data-flow trace, a fence-breaking backtick run, failing test output, hidden
-Unicode (bidi controls and tag characters), and fake markdown structure. Every payload holds a canary string.
+Unicode (bidi controls and tag characters), fake markdown structure, and a route path in the audit's route list.
+Every payload holds a canary string.
 
 A case passes when:
 - the canary reaches at least one prompt, so the path was really exercised, and
@@ -57,7 +58,7 @@ positive gets no credit and no violation, and the user decides.
 
 ## Results
 
-On the code this corpus was written with: 36 of 36 pass. On agentharden at commit fc96a6b (before this work), 6 of
+On the current code: 37 of 37 pass. When the corpus was written it had 36 cases, and all 36 passed. On agentharden at commit fc96a6b (before this work), 6 of
 36 pass, and those 6 are the controls: every injection payload landed outside a data block, and 15 of the 20
 cheats received full level credit.
 

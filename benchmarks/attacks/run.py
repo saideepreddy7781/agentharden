@@ -125,7 +125,7 @@ def injection_case(case: dict, tmp: Path) -> dict:
     root = make_repo(case["files"], tmp)
     canary = case["canary"]
     prompts = []
-    text, _, _ = prompt.build(scanner.run(str(root), external=False), target=case.get("target"))
+    text, _, _ = prompt.build(scanner.run(str(root), external=False), target=case.get("target"), audit=True)
     prompts.append(("scan", text))
     log = Path(tempfile.mkdtemp(dir=tmp))
     test_cmd = case.get("test_cmd", "").replace("{python}", f'"{sys.executable}"') or None

@@ -5,13 +5,14 @@ repo cannot hijack.**
 
 [![ci](https://github.com/saideepreddy7781/agentharden/actions/workflows/ci.yml/badge.svg)](https://github.com/saideepreddy7781/agentharden/actions/workflows/ci.yml)
 ![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)
-![attack benchmark: 36/36](https://img.shields.io/badge/attack%20benchmark-36%2F36-brightgreen)
+![attack benchmark: 37/37](https://img.shields.io/badge/attack%20benchmark-37%2F37-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 agentharden scans a codebase for leaked secrets, injection flows, risky code, missing defenses and vulnerable
-dependencies, with no network and no account. It writes `FIX_PROMPT.md`, a task list for Claude Code, Codex, aider
-or any LLM. `agentharden fix` hands that prompt to an agent, re-scans, and repeats until the code reaches the next
-security level.
+dependencies, with no network and no account. It writes `FIX_PROMPT.md`, a prompt you paste into Cursor, Copilot,
+Claude Code, Codex or any AI coding tool. The prompt holds the findings as tasks, plus a security audit that asks the
+AI to check what a scanner cannot see: missing access checks, IDOR, CSRF, abuse of expensive endpoints. `agentharden
+fix` can also hand the prompt to an agent, re-scan, and repeat until the code reaches the next security level.
 
 Feeding scanner output to an agent that can edit files has two failure modes. The repo being scanned can plant
 instructions for the agent in its comments, file names or test output. And the agent can "fix" a finding by hiding
@@ -123,7 +124,7 @@ Or as a [pre-commit](https://pre-commit.com) hook:
 
 ```yaml
 - repo: https://github.com/saideepreddy7781/agentharden
-  rev: v0.2.0
+  rev: v0.2.1
   hooks: [{ id: agentharden }]
 ```
 
@@ -137,6 +138,24 @@ Or as a [pre-commit](https://pre-commit.com) hook:
 | Posture | Missing security headers and CSP, rate limiting, input validation, Django deploy settings, lockfiles, pinned versions, non-root containers, CI scanning |
 | Dependencies | npm, pnpm, yarn, bun, PyPI (requirements, Pipfile, poetry, uv, pdm), Go, Maven, Gradle, RubyGems, crates.io and Packagist lockfiles against [OSV.dev](https://osv.dev). Anything on CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) list becomes critical |
 | Optional | [Semgrep](https://semgrep.dev), [Gitleaks](https://github.com/gitleaks/gitleaks), [Bandit](https://github.com/PyCQA/bandit) and [Trivy](https://trivy.dev), used when installed, run with agentharden's own config, results merged |
+
+### The security audit in the prompt
+
+A scanner matches code patterns. It cannot tell whether a route checks that the caller owns the record it returns,
+so `FIX_PROMPT.md` also carries a **Security audit** section for the AI tool to work through:
+
+- a map of the attack surface: every route agentharden recognises (FastAPI, Flask, Django, Express, Fastify,
+  NestJS, Next.js route handlers and server actions, Spring, Rails, Laravel, Go), with file, line, whether an auth
+  check is visible, and whether it takes an id from the URL. Unprotected routes come first. It also lists file
+  uploads and downloads, outbound requests built from variables, AI API calls, CORS, token and password code.
+- a checklist built on OWASP ASVS 5.0 and the CWE Top 25: access control and IDOR, authentication, sessions and
+  CSRF, mass assignment and uploads, SSRF, data exposure, and abuse and business logic, with notes for each
+  framework it detects and for apps that call AI APIs.
+- rules that keep the answer checkable: each issue cites file:line and the attacker's request, each fix comes with
+  a test that sends that request, and the report ends with a verdict for every route.
+
+The route list is repo text, so it sits in a data block like everything else. `agentharden scan --no-audit` leaves
+the section out. `agentharden fix` does not include it, because its rounds are scored by re-scanning.
 
 Findings in tests, docs, examples, vendored code and dev dependencies are listed apart and do not set the level or
 fail CI. A real-format secret counts wherever it is, because a key leaked from a test file is still leaked.
@@ -164,7 +183,7 @@ guarantees. They do not measure how a real model reacts to an injected instructi
 
 | Suite | Cases | Passed | 0.1.0 (as hardn) |
 |---|---|---|---|
-| Prompt injection via code, comments, file names, dependency names, identifiers, test output, fence breaks, hidden Unicode | 10 | 10 | 0 |
+| Prompt injection via code, comments, file names, dependency names, identifiers, test output, fence breaks, hidden Unicode, route paths | 11 | 11 | 0 |
 | Cheating agents (suppressions, ignore and baseline edits, deleted or gutted tests, test-command edits) | 20 | 20 | 0 |
 | Legitimate fixes that must still get credit | 6 | 6 | 6 |
 

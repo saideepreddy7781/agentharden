@@ -75,6 +75,8 @@ def main(argv=None) -> int:
     s.add_argument("--sarif", action="store_true", help="also write results.sarif (GitHub code scanning)")
     s.add_argument("--json", action="store_true", help="print the JSON report to stdout")
     s.add_argument("--copy", action="store_true", help="copy the prompt to the clipboard")
+    s.add_argument("--no-audit", action="store_true",
+                   help="leave the security-audit section (routes, access control, CSRF, abuse) out of the prompt")
     s.add_argument("--print-prompt", action="store_true", help="print the prompt to stdout instead of the summary")
     s.add_argument("-v", "--verbose", action="store_true", help="list every finding and engine detail")
     s.add_argument("-q", "--quiet", action="store_true", help="no summary output (blind spots still go to stderr)")
@@ -221,7 +223,8 @@ def cmd_scan(a) -> int:
         meta["diff"] = {"ref": a.diff, "base": changes.base, "total": len(whole), "kept": len(result.findings)}
 
     target = TARGETS[a.target] if a.target else None
-    text, target, n_tasks = prompt.build(result, target=target, max_tasks=a.max_tasks)
+    text, target, n_tasks = prompt.build(result, target=target, max_tasks=a.max_tasks,
+                                         audit=not getattr(a, "no_audit", False))
     report = output.report_dict(result, meta, level_findings=level_findings)
     prompt_path = os.path.join(out_dir, "FIX_PROMPT.md")
     if out_error is None:
