@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0
+
+Privacy of what reaches an AI tool
+- Fixed: since 0.3.0 a secret inside a route path (for example `/hook/<key>`) reached `FIX_PROMPT.md` and
+  `report.json` unmasked, and a secret in a file name could reach any output. Masking used to run on code snippets
+  only. It now runs once on every output: each data block in the prompt, the terminal summary, `report.json` and
+  SARIF, so text from any field is covered.
+- Personal email addresses in quoted code are masked (`p***@acme.com`). Reserved example domains are left alone.
+- After every scan the terminal prints a `Privacy` line: prompt size, how many files are quoted, how many secret
+  values and emails were masked, and that nothing is sent until you paste it.
+- `agentharden --no-code` writes a prompt with file and line only, for teams that may not paste code into a chat AI.
+- New tests plant keys and an email in a route path, a file name, a code line and a data-flow trace and check every
+  output, and run a full scan with every network call made to fail.
+- New `docs/HOW-IT-WORKS.md`: the data flow end to end, what leaves the machine and when, how each engine finds
+  issues, and the limits.
+
 ## 0.4.0
 
 - Running `agentharden` in a terminal now copies the fix prompt to the clipboard by itself and keeps one-key

@@ -443,3 +443,42 @@ def _finding(rid, title, sev, path, lineno, line, value, whole_value: bool = Fal
         rule_id=rid, title=title, severity=sev, category="secret", file=path, line=lineno,
         snippet=snippet, cwe="CWE-798", fix=ROTATE,
     )
+
+
+# ---------------------------------------------------------------- one filter for everything agentharden writes
+
+EMAIL = re.compile(r"(?<![\w.%+-])([A-Za-z0-9][A-Za-z0-9._%+-]*)@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,24})(?![\w-])")
+RESERVED_DOMAINS = ("example.com", "example.org", "example.net", "localhost")
+RESERVED_SUFFIXES = (".example", ".test", ".invalid", ".localhost", ".example.com", ".example.org", ".example.net")
+
+
+def mask_emails(text: str) -> str:
+    """priya.sharma@acme.com -> p***@acme.com. Addresses on reserved example domains (RFC 2606) stay as they are."""
+    if not text or "@" not in text:
+        return text
+
+    def sub(m):
+        local, domain = m.group(1), m.group(2).lower()
+        if domain in RESERVED_DOMAINS or domain.endswith(RESERVED_SUFFIXES) or local.endswith("***"):
+            return m.group(0)
+        return f"{local[0]}***@{m.group(2)}"
+    return EMAIL.sub(sub, text)
+
+
+def scrub(text):
+    """Mask credential values and personal email addresses. Every output agentharden writes passes through this:
+    the prompt's data blocks, the terminal summary, report.json and SARIF."""
+    if not isinstance(text, str) or not text:
+        return text
+    return mask_emails(redact_text(text))
+
+
+def scrub_obj(obj):
+    """scrub() applied to every string in a JSON-like structure (keys included)."""
+    if isinstance(obj, str):
+        return scrub(obj)
+    if isinstance(obj, dict):
+        return {scrub_obj(k): scrub_obj(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [scrub_obj(v) for v in obj]
+    return obj

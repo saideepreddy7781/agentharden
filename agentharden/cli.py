@@ -77,6 +77,8 @@ def main(argv=None) -> int:
     s.add_argument("--copy", action="store_true", help="copy the prompt to the clipboard (automatic in a terminal)")
     s.add_argument("--no-copy", action="store_true",
                    help="in a terminal, don't copy the prompt or show the copy / rescan keys")
+    s.add_argument("--no-code", action="store_true",
+                   help="quote no code in the prompt, only file and line (for AI tools that read the repo themselves)")
     s.add_argument("--no-audit", action="store_true",
                    help="leave the security-audit section (routes, access control, CSRF, abuse) out of the prompt")
     s.add_argument("--print-prompt", action="store_true", help="print the prompt to stdout instead of the summary")
@@ -247,7 +249,8 @@ def _scan_once(a) -> tuple:
 
     target = TARGETS[a.target] if a.target else None
     text, target, n_tasks = prompt.build(result, target=target, max_tasks=a.max_tasks,
-                                         audit=not getattr(a, "no_audit", False))
+                                         audit=not getattr(a, "no_audit", False),
+                                         quote_code=not getattr(a, "no_code", False))
     report = output.report_dict(result, meta, level_findings=level_findings)
     prompt_path = os.path.join(out_dir, "FIX_PROMPT.md")
     if out_error is None:
@@ -269,6 +272,7 @@ def _scan_once(a) -> tuple:
         print(output.render(result, output.rel(prompt_path), target, n_tasks, show=10_000 if a.verbose else 15,
                             verbose=a.verbose, scope=" · ".join(scope), level_findings=level_findings,
                             audit=not getattr(a, "no_audit", False)))
+        print(f"  {output.c('Privacy', '2')}   {prompt.privacy_summary(text)}\n")
     if a.quiet or stdout_only:
         for line in output.blind_spot_lines(result):
             print(line, file=sys.stderr)

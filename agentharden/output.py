@@ -13,7 +13,7 @@ import sys
 import tempfile
 from urllib.parse import quote
 
-from . import __version__
+from . import __version__, secrets
 from .models import SEV_RANK, SEVERITIES
 from .scoring import LEVELS, grade, level, score
 
@@ -246,7 +246,7 @@ def render(result, prompt_path: str, target: int, n_tasks: int, show: int = 15, 
     elif cur == 4 and not gaps:
         out.append(f"  {c('→', '1;36')} Top level reached. Keep it there: add `agentharden scan . --fail-on low` to CI.")
     out.append("")
-    return "\n".join(out)
+    return secrets.scrub("\n".join(out))
 
 
 def blind_spot_lines(result) -> list:
@@ -268,7 +268,7 @@ def report_dict(result, meta: dict | None = None, level_findings: list | None = 
     by_ctx = {}
     for x in outside:
         by_ctx[x.context] = by_ctx.get(x.context, 0) + 1
-    return {
+    return secrets.scrub_obj({
         "tool": "agentharden", "version": __version__, "root": result.root, "stack": result.stack,
         "engines": result.engines, "level": lvl, "level_name": LEVELS[lvl], "score": s, "grade": grade(s),
         "level_scope": "repository" if level_findings is not None else "findings",
@@ -278,7 +278,7 @@ def report_dict(result, meta: dict | None = None, level_findings: list | None = 
         "files_scanned": result.files_scanned, "duration_seconds": round(result.duration, 3),
         "outside_app": {"count": len(outside), "by_context": by_ctx},
         "scope": meta or {}, "findings": [dict(x.to_dict(), counts=x.counts) for x in f],
-    }
+    })
 
 
 def write_json(result, path: str, meta: dict | None = None, level_findings: list | None = None) -> str:
@@ -447,7 +447,7 @@ def sarif_doc(result, prefix: str = "") -> dict:
                            "project-wide": not x.file},
         })
     gaps = list(result.gaps or [])
-    return {
+    return secrets.scrub_obj({
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json", "version": "2.1.0",
         "runs": [{
             "tool": {"driver": {"name": "agentharden", "version": __version__, "semanticVersion": __version__,
@@ -457,7 +457,7 @@ def sarif_doc(result, prefix: str = "") -> dict:
             "results": results,
             "properties": {"complete": not gaps},
         }],
-    }
+    })
 
 
 def write_sarif(result, path: str, prefix: str = "") -> str:

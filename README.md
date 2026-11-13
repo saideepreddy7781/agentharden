@@ -19,6 +19,7 @@ instructions for the agent in its comments, file names or test output. And the a
 it: a `nosec` comment, a deleted test, an edited ignore file. agentharden fences every piece of repo text as
 untrusted data, checks every round's diff for cheating, and gives no credit when it finds any.
 [`benchmarks/attacks`](benchmarks/attacks) is the proof you can run yourself.
+[How it works](docs/HOW-IT-WORKS.md) explains the data flow end to end: what is read, what is masked, and what leaves your machine.
 
 ```
 $ agentharden examples/vulnerable-app
@@ -61,6 +62,7 @@ $ agentharden examples/vulnerable-app
 ## Install
 
 ```bash
+brew install saideepreddy7781/tap/agentharden                       # macOS and Linux with Homebrew
 pipx install git+https://github.com/saideepreddy7781/agentharden   # or: pip install git+https://...
 agentharden update        # once, while online: OSV advisories and the CISA known-exploited list
 ```
@@ -83,7 +85,9 @@ The scan stays open with one-key options:
 ```
 
 When the AI is done, press `r`: agentharden scans again, shows the level change (`L0 Exposed → L2 Baseline (up)`)
-and copies a fresh prompt with whatever is left. Repeat until you reach the level you want. The keys appear only
+and copies a fresh prompt with whatever is left. Repeat until you reach the level you want. A scan opens no network connection, and the prompt has secret values and personal email
+addresses masked; the terminal prints a `Privacy` line saying what the prompt holds before you paste it, and
+`--no-code` leaves code out of it entirely. The keys appear only
 when you run it yourself in a terminal, never in CI, in a pipe, in a git hook or with `--fail-on`; `--no-copy`
 turns them off.
 

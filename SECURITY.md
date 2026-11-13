@@ -16,7 +16,9 @@ the guarantees, and a break in any of them is in scope:
 - npm run by `agentharden fix` downloads no package code and runs no scripts (`--package-lock-only
   --ignore-scripts`). It does not run at all when the repo has a `.npmrc` or a git, URL or path dependency, and
   package names and versions are checked before they reach the command line.
-- Secret values never reach the terminal, `FIX_PROMPT.md`, `report.json`, SARIF or the baseline.
+- Secret values and personal email addresses never reach the terminal, `FIX_PROMPT.md`, `report.json`, SARIF or the
+  baseline, whichever field of the repository they sit in (code, file name, route path, data-flow trace). One
+  filter, `secrets.scrub()`, is applied to every output. `docs/HOW-IT-WORKS.md` lists what leaves the machine.
 - Files are read only inside the scanned folder, and output is never written through a symlink.
 - Text from the scanned repo reaches the agent only inside labelled data blocks it cannot break out of.
 - In `agentharden fix`, a round that cheats (suppression comments, ignore or baseline edits, deleted tests, an
