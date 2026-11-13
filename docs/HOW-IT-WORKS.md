@@ -22,7 +22,7 @@ addresses masked before it is written.
  │                              taint (Python AST, JS line tracking)   context            report    │
  │                              63 code rules                          baseline           SARIF     │
  │                              posture checks                         redact             terminal  │
- │                              dependencies ◄── ~/.agentharden/osv.sqlite (local OSV + CISA KEV)  │
+ │                              dependencies ◄── ~/.agentharden/osv.sqlite (local copy of OSV.dev)  │
  │                              attack-surface map (routes, uploads, AI calls, CORS, auth code)     │
  │                              optional: semgrep, gitleaks, bandit, trivy (offline, our configs)   │
  └──────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -39,7 +39,7 @@ addresses masked before it is written.
 | Step | Network | What is sent | Who decides |
 |---|---|---|---|
 | `agentharden scan` (the default) | none | nothing | |
-| `agentharden update` | OSV.dev, cisa.gov, optionally github.com/semgrep | requests for public advisory data, no project data | you, usually weekly |
+| `agentharden update` | OSV.dev only, plus github.com/semgrep if you ask for Semgrep rules | requests for public advisory data, no project data | you, usually weekly |
 | Pasting the prompt into an AI tool | that tool's vendor | the masked prompt, plus whatever the tool reads from your repo | you |
 | `agentharden fix`, npm step | the npm registry | the names and versions of packages to upgrade | you confirm the listed commands |
 | `agentharden fix`, agent | the agent's vendor (Anthropic, OpenAI, ...) | what the agent reads in your repo | you confirm before it starts |
@@ -81,7 +81,7 @@ Each engine is a different technique, chosen for what it can find without runnin
 | JS/TS taint | scoped line tracking from `req.query`, `req.body`, `req.params` and browser sources to sinks | `` db.query(`... ${req.params.id}`) `` | no type information, flows across files |
 | Code rules | line patterns, each with a safe twin that must not match, for Python, JS/TS, Go, Java/Kotlin, PHP, Ruby, Dockerfiles, GitHub Actions, Kubernetes and Terraform | `verify=False`, `yaml.load`, `pull_request_target` with a checkout | intent |
 | Posture | project-wide checks | no security headers, no rate limiting, container runs as root, no lockfile | |
-| Dependencies | parses lockfiles (npm, pnpm, yarn, bun, PyPI, Go, Maven, Gradle, RubyGems, crates.io, Packagist) and matches exact versions against the local OSV database; anything on CISA's actively-exploited list becomes critical | `axios 1.19.0`, 12 advisories | advisories newer than your last `agentharden update` |
+| Dependencies | parses lockfiles (npm, pnpm, yarn, bun, PyPI, Go, Maven, Gradle, RubyGems, crates.io, Packagist) and matches exact versions against the local OSV database, using each advisory's own severity | `axios 1.19.0`, 12 advisories | advisories newer than your last `agentharden update` |
 | Attack-surface map | finds routes in FastAPI, Flask, Django, Express, Fastify, Koa, Hono, NestJS, Next.js, Spring, Rails, Laravel and Go, with whether an auth check is visible and whether the route takes an id from the URL | `POST /compile` with no login check | prefixes added where a router is mounted |
 
 Findings are then deduplicated across engines and classified by context: findings in tests, docs, examples,

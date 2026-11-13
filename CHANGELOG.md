@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- Removed the CISA Known Exploited Vulnerabilities list. `agentharden update` now downloads only from OSV.dev (and
+  Semgrep's rules from GitHub when asked), and contacts no government website. Packages keep the severity their
+  advisory gives them; nothing is raised to critical because of an outside list. The next `agentharden update`
+  deletes CISA data left in the local database by older versions.
+- A test records every URL `agentharden update` requests and checks that only OSV.dev is on the list.
+
 ## 0.5.0
 
 Privacy of what reaches an AI tool

@@ -1,8 +1,8 @@
 """Offline dependency vulnerability matching against a local OSV.dev mirror (SQLite).
 
 `agentharden update` is the only networked command: it downloads OSV's free per-ecosystem
-dumps (which aggregate GitHub Security Advisories, PyPA, RustSec, Go vulndb, ...) plus
-CISA's Known Exploited Vulnerabilities catalog. Every scan afterwards is fully offline.
+dumps from osv.dev (which aggregate GitHub Security Advisories, PyPA, RustSec, Go vulndb, ...).
+No other source is contacted. Every scan afterwards is fully offline.
 
 `scan()` returns `(findings, note, gaps)`. A gap is a plain sentence about a check that could
 not run and that could change the grade: no advisory data for an ecosystem the project uses,
@@ -33,7 +33,6 @@ from .models import SEV_RANK, Finding
 
 HOME = Path(os.environ.get("AGENTHARDEN_HOME", Path.home() / ".agentharden"))
 OSV_URL = "https://osv-vulnerabilities.storage.googleapis.com/{eco}/all.zip"
-KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 DEFAULT_ECOSYSTEMS = ("npm", "PyPI", "Go", "Maven", "RubyGems", "crates.io", "Packagist")
 SEV_MAP = {"CRITICAL": "critical", "HIGH": "high", "MODERATE": "medium", "MEDIUM": "medium", "LOW": "low"}
 
@@ -43,7 +42,6 @@ WARN_DAYS = 7                # older advisory data gets a note
 MAX_DOWNLOAD_BYTES = 2 << 30          # one OSV zip (npm is about 220 MB in 2026)
 MAX_MEMBER_BYTES = 64 << 20           # one advisory JSON inside the zip
 MAX_UNCOMPRESSED_BYTES = 6 << 30      # all members of one zip together (npm is about 400 MB)
-MAX_KEV_BYTES = 64 << 20
 MAX_MANIFEST_BYTES = 64 << 20
 MAX_REQUIREMENT_FILES = 64            # -r / -c includes followed per top-level requirements file
 MAX_INCLUDE_DEPTH = 8
@@ -77,7 +75,6 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS vulns (eco TEXT, name TEXT, id TEXT, summary TEXT, severity TEXT,
                                   aliases TEXT, affected TEXT);
 CREATE INDEX IF NOT EXISTS vulns_pkg ON vulns (eco, name);
-CREATE TABLE IF NOT EXISTS kev (cve TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 _VULN_COLUMNS = ("eco", "name", "id", "summary", "severity", "aliases", "affected")
@@ -92,7 +89,7 @@ def _schema_state(con: sqlite3.Connection) -> str:
     if not tables:
         return "empty"
     cols = tuple(r[1] for r in con.execute("PRAGMA table_info(vulns)"))
-    if cols != _VULN_COLUMNS or not {"kev", "meta"} <= tables:
+    if cols != _VULN_COLUMNS or "meta" not in tables:
         return "old"
     return "current" if version == SCHEMA_VERSION else "legacy"
 
@@ -136,7 +133,9 @@ def _connect(path: Path | None = None, create: bool = True) -> sqlite3.Connectio
 def _open_for_update(path: Path) -> sqlite3.Connection:
     """Open for writing. A damaged or outdated cache is deleted and rebuilt, since it holds only downloads."""
     try:
-        return _connect(path)
+        con = _connect(path)
+        _drop_retired(con)
+        return con
     except (AdvisoryDbError, sqlite3.Error) as exc:
         if "newer agentharden" in str(exc):
             raise
@@ -146,6 +145,13 @@ def _open_for_update(path: Path) -> sqlite3.Connection:
             except FileNotFoundError:
                 pass
         return _connect(path)
+
+
+def _drop_retired(con: sqlite3.Connection) -> None:
+    """Remove data from sources agentharden no longer uses (the CISA KEV list, until 0.5.0)."""
+    with con:
+        con.execute("DROP TABLE IF EXISTS kev")
+        con.execute("DELETE FROM meta WHERE key = 'kev_updated_at'")
 
 
 def normalize(eco: str, name: str) -> str:
@@ -250,13 +256,6 @@ def update(ecosystems=DEFAULT_ECOSYSTEMS, log=print, db: Path | None = None) -> 
                         os.unlink(tmp_name)
                     except OSError:
                         pass
-        log(f"  ↓ CISA KEV  {KEV_URL}")
-        try:
-            n = _load_kev(con, ctx)
-            log(f"    ✓ {n:,} known-exploited CVEs")
-        except (UpdateError, sqlite3.Error, *_NET_ERRORS) as exc:
-            log(f"    ! failed: {exc}; kept the existing KEV data")
-            failures += 1
         if loaded:
             try:
                 with con:
@@ -269,27 +268,6 @@ def update(ecosystems=DEFAULT_ECOSYSTEMS, log=print, db: Path | None = None) -> 
     finally:
         con.close()
     return failures
-
-
-def _load_kev(con: sqlite3.Connection, ctx) -> int:
-    with tempfile.TemporaryFile() as tmp:
-        _download(KEV_URL, ctx, tmp, MAX_KEV_BYTES)
-        tmp.seek(0)
-        try:
-            data = json.loads(tmp.read().decode("utf-8", errors="replace"))
-        except ValueError as exc:
-            raise UpdateError("KEV feed was not JSON") from exc
-    items = data.get("vulnerabilities") if isinstance(data, dict) else None
-    if not isinstance(items, list):
-        raise UpdateError("KEV feed had no vulnerability list")
-    cves = sorted({v["cveID"] for v in items if isinstance(v, dict) and isinstance(v.get("cveID"), str)})
-    if not cves:
-        raise UpdateError("KEV feed listed no CVEs")
-    with con:
-        con.execute("DELETE FROM kev")
-        con.executemany("INSERT OR IGNORE INTO kev VALUES (?)", [(c,) for c in cves])
-        con.execute("INSERT OR REPLACE INTO meta VALUES ('kev_updated_at', ?)", (str(int(time.time())),))
-    return len(cves)
 
 
 def _records(zf: zipfile.ZipFile):
@@ -394,7 +372,7 @@ def _load_zip(con: sqlite3.Connection, eco: str, zip_path: str) -> tuple:
 def status(db: Path | None = None) -> dict:
     """State of the advisory DB. `error` holds a sentence when the file exists but cannot be used."""
     path = db or db_path()
-    base = {"present": False, "ecosystems": {}, "kev": 0, "age_days": None, "eco_age_days": {}, "error": None,
+    base = {"present": False, "ecosystems": {}, "age_days": None, "eco_age_days": {}, "error": None,
             "legacy": False}
     try:
         if not path.exists() or path.stat().st_size == 0:
@@ -408,7 +386,6 @@ def status(db: Path | None = None) -> dict:
     try:
         legacy = _schema_state(con) == "legacy"
         counts = dict(con.execute("SELECT eco, COUNT(DISTINCT id) FROM vulns GROUP BY eco").fetchall())
-        kev = con.execute("SELECT COUNT(*) FROM kev").fetchone()[0]
         meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
     except sqlite3.Error as exc:
         return {**base, "error": _db_problem(path, exc)}
@@ -428,7 +405,7 @@ def status(db: Path | None = None) -> dict:
         a = age(f"updated:{eco}")
         eco_age[eco] = a if a is not None else overall
     known = [a for a in eco_age.values() if a is not None]
-    return {**base, "present": bool(counts), "ecosystems": counts, "kev": kev, "legacy": legacy,
+    return {**base, "present": bool(counts), "ecosystems": counts, "legacy": legacy,
             "age_days": max(known) if known else overall, "eco_age_days": eco_age}
 
 
@@ -1950,15 +1927,11 @@ def scan(root: str, all_paths: list, db: Path | None = None):
         return [], f"{len(merged)} packages found, advisory DB unusable" + tail, gaps
     findings = []
     try:
-        kev = {r[0] for r in con.execute("SELECT cve FROM kev")}
-        if not kev:
-            gaps.append("The CISA known-exploited list is missing, so actively exploited packages are not raised "
-                        "to critical. Run `agentharden update`.")
         for p, also in merged:
             if p.eco not in covered:
                 continue
             try:
-                f = _match(con, p, also, kev)
+                f = _match(con, p, also)
             except (ValueError, TypeError, KeyError, AttributeError) as exc:
                 gaps.append(f"{p.name}@{p.version} in {p.path} could not be compared with its advisories "
                             f"({type(exc).__name__}), so it was not checked.")
@@ -1981,7 +1954,7 @@ def scan(root: str, all_paths: list, db: Path | None = None):
     return findings, note + tail, gaps
 
 
-def _match(con: sqlite3.Connection, p: Package, also: list, kev: set):
+def _match(con: sqlite3.Connection, p: Package, also: list):
     eco, name, version = p.eco, p.name, p.version
     rows = con.execute("SELECT id, summary, severity, aliases, affected FROM vulns WHERE eco=? AND name=?",
                        (eco, normalize(eco, name))).fetchall()
@@ -2002,18 +1975,16 @@ def _match(con: sqlite3.Connection, p: Package, also: list, kev: set):
             hits[vid] = {"ranges": prev.get("ranges", []) + aff.get("ranges", []),
                          "versions": prev.get("versions", []) + aff.get("versions", [])}
             continue
-        exploited = bool(kev & set(al + [vid]))
         sev = sev if sev in SEV_RANK else "medium"
         hits[vid] = aff
         alias_map[vid] = al
-        info[vid] = (summary or "", "critical" if exploited else sev, exploited, bool(aff.get("informational")))
+        info[vid] = (summary or "", sev, bool(aff.get("informational")))
     for vid in hits:
         others.pop(vid, None)
     if not hits:
         return None
     ids = sorted(hits)
     sev = max((info[v][1] for v in ids), key=SEV_RANK.get)
-    exploited = [v for v in ids if info[v][2]]
     target, cleared, still, landed = upgrade_target(eco, version, hits, others)
     n = _clusters(ids, alias_map)
     shown = f"{', '.join(ids[:6])}{'…' if len(ids) > 6 else ''}"
@@ -2038,16 +2009,16 @@ def _match(con: sqlite3.Connection, p: Package, also: list, kev: set):
     else:
         fix = (f"No fixed release published for `{name}` {version}. Assess reachability; replace the package or "
                "mitigate around the vulnerable API.")
-    all_info = all(info[v][3] for v in ids)
+    all_info = all(info[v][2] for v in ids)
     noun = ("informational advisor" + ("y" if n == 1 else "ies")) if all_info else \
         ("known vulnerabilit" + ("y" if n == 1 else "ies"))
     return Finding(
-        rule_id=f"DEP-{eco}", title=f"{name}@{version}: {n} {noun}" + (" (actively exploited)" if exploited else ""),
+        rule_id=f"DEP-{eco}", title=f"{name}@{version}: {n} {noun}",
         severity=sev, category="dependency", file=p.path,
         snippet="; ".join(f"{vid}: {info[vid][0][:90]}" for vid in ids[:4]), cwe="CWE-1395", fix=fix,
         sources=["osv"], context="dev-dependency" if p.dev else "app",
         extra={"package": name, "version": version, "ecosystem": eco, "ids": ids, "issues": n,
                "fixed_in": target, "clears": cleared if target else [], "still_open": still,
-               "target_listed_in": landed, "kev": exploited, "dev": p.dev,
+               "target_listed_in": landed, "dev": p.dev,
                "dependency": {True: "direct", False: "transitive"}.get(p.direct, "unknown"), "also_in": also},
     )

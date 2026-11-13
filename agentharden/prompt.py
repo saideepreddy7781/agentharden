@@ -275,8 +275,6 @@ def build(result, target: int | None = None, max_tasks: int = 30, audit: bool = 
         w(f"### {label} · {sev.upper()} · {name} · {where}\n")
         w(data_block(label, _task_block(group, quote_code)))
         w("")
-        if any(f.extra.get("kev") for f in group):
-            w("- **CISA KEV:** at least one advisory in this task is actively exploited in the wild.")
         if is_static(f0.fix):
             w(f"- **Fix:** {f0.fix}")
         else:

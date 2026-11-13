@@ -11,7 +11,8 @@ agentharden reads code it does not trust and hands what it finds to a coding age
 the guarantees, and a break in any of them is in scope:
 
 - Scanning never runs code from the scanned repo, including programs named in its `.git/config`.
-- Scans never use the network. Only `agentharden update` downloads data (OSV.dev, CISA KEV, optional Semgrep rules).
+- Scans never use the network. Only `agentharden update` downloads data: advisories from OSV.dev, and Semgrep's
+  community rules from GitHub if you ask for them. No government source is contacted.
   `agentharden fix` also runs npm, after you confirm, to read package versions from the registry.
 - npm run by `agentharden fix` downloads no package code and runs no scripts (`--package-lock-only
   --ignore-scripts`). It does not run at all when the repo has a `.npmrc` or a git, URL or path dependency, and

@@ -43,7 +43,7 @@ class Tmp(unittest.TestCase):
     def pkgs(self):
         return deps.collect_packages(str(self.tmp), self.paths())
 
-    def db(self, rows=(), kev=(), ages=None, ecos_age_days=0):
+    def db(self, rows=(), ages=None, ecos_age_days=0):
         """A current-schema DB. rows: (eco, name, id, severity, aliases, affected)."""
         path = self.tmp / "db" / "osv.sqlite"
         con = deps._connect(path)
@@ -53,8 +53,6 @@ class Tmp(unittest.TestCase):
                         (eco, deps.normalize(eco, name), vid, f"summary of {vid}", sev, json.dumps(aliases),
                          json.dumps(affected)))
             con.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (f"updated:{eco}", str(now)))
-        for cve in kev:
-            con.execute("INSERT INTO kev VALUES (?)", (cve,))
         con.execute("INSERT OR REPLACE INTO meta VALUES ('updated_at', ?)", (str(now),))
         con.commit()
         con.close()
@@ -479,7 +477,7 @@ class ScanCoverageTest(Tmp):
         self.assertEqual(len(go), 1)
         self.assertIn("no Go data", go[0])
         self.assertIn("--ecosystems Go", go[0])
-        self.assertTrue(any("known-exploited list is missing" in g for g in gaps))  # this DB has no KEV rows
+        self.assertFalse(any("CISA" in g or "exploited" in g for g in gaps))
 
     def test_stale_db_is_a_gap(self):
         findings, note, gaps = self.scan(self.db([LODASH], ecos_age_days=45))
@@ -495,7 +493,7 @@ class ScanCoverageTest(Tmp):
         old = self.tmp / "db" / "old.sqlite"
         con = sqlite3.connect(str(old))
         con.executescript("CREATE TABLE vulns (eco TEXT,name TEXT,id TEXT,summary TEXT,severity TEXT);"
-                          "CREATE TABLE kev (cve TEXT PRIMARY KEY); CREATE TABLE meta (key TEXT, value TEXT);")
+                          "CREATE TABLE meta (key TEXT, value TEXT);")
         con.close()
         _, note, gaps = self.scan(old)
         self.assertTrue(any("old format" in g for g in gaps))
@@ -508,17 +506,17 @@ class ScanCoverageTest(Tmp):
 
 
 class ScanFindingTest(Tmp):
-    def test_kev_escalation_dev_context_and_transitive(self):
+    def test_dev_context_and_transitive(self):
         self.write("package-lock.json", json.dumps({"lockfileVersion": 3, "packages": {
             "": {"devDependencies": {"jest": "29"}},
             "node_modules/jest": {"version": "29.0.0", "dev": True},
             "node_modules/lodash": {"version": "4.17.15", "dev": True}}}))
-        findings, note, gaps = self.scan(self.db([LODASH], kev=["CVE-2099-0001"]))
+        findings, note, gaps = self.scan(self.db([LODASH]))
         self.assertEqual(note, "2 packages checked")
         self.assertEqual(gaps, [])
         f = findings[0]
-        self.assertEqual(f.severity, "critical")
-        self.assertIn("actively exploited", f.title)
+        self.assertEqual(f.severity, "high")
+        self.assertNotIn("exploited", f.title)
         self.assertEqual(f.context, "dev-dependency")
         self.assertEqual(f.extra["dependency"], "transitive")
         self.assertEqual(f.extra["fixed_in"], "4.17.21")
@@ -597,27 +595,24 @@ ADV = {"id": "GHSA-new", "summary": "s", "aliases": ["CVE-2021-44228"], "databas
 class UpdateTest(Tmp):
     def setUp(self):
         super().setUp()
-        self._urls = deps.OSV_URL, deps.KEV_URL
+        self._url = deps.OSV_URL
         self.feeds = self.tmp / "feeds"
         self.feeds.mkdir()
         deps.OSV_URL = self.feeds.as_uri() + "/{eco}.zip"
-        deps.KEV_URL = (self.feeds / "kev.json").as_uri()
-        (self.feeds / "kev.json").write_text(json.dumps({"vulnerabilities": [{"cveID": "CVE-2021-44228"}]}))
         self.dbp = self.db([("PyPI", "old", "OLD-1", "high", [], {"ranges": [], "versions": ["1.0"]})],
-                           kev=["CVE-OLD"], ecos_age_days=100)
+                           ecos_age_days=100)
         self.log = []
 
     def tearDown(self):
-        deps.OSV_URL, deps.KEV_URL = self._urls
+        deps.OSV_URL = self._url
         super().tearDown()
 
     def state(self):
         con = sqlite3.connect(str(self.dbp))
         ids = sorted(r[0] for r in con.execute("SELECT id FROM vulns"))
-        kev = sorted(r[0] for r in con.execute("SELECT cve FROM kev"))
         updated = con.execute("SELECT value FROM meta WHERE key='updated_at'").fetchone()[0]
         con.close()
-        return ids, kev, int(updated)
+        return ids, int(updated)
 
     def run_update(self):
         return deps.update(["PyPI"], log=self.log.append, db=self.dbp)
@@ -625,8 +620,8 @@ class UpdateTest(Tmp):
     def test_good_zip_replaces_data(self):
         make_zip(self.feeds / "PyPI.zip", [("GHSA-new.json", json.dumps(ADV)), ("bad.json", "{nope")])
         self.assertEqual(self.run_update(), 0)
-        ids, kev, updated = self.state()
-        self.assertEqual((ids, kev), (["GHSA-new"], ["CVE-2021-44228"]))
+        ids, updated = self.state()
+        self.assertEqual(ids, ["GHSA-new"])
         self.assertGreater(updated, time.time() - 60)
         self.assertTrue(any("1 unreadable records skipped" in m for m in self.log))
 
@@ -634,16 +629,46 @@ class UpdateTest(Tmp):
         for members in ([], [("x.json", "[1,2]")], [("x.json", json.dumps({"id": "X", "affected": None}))]):
             make_zip(self.feeds / "PyPI.zip", members)
             self.assertEqual(self.run_update(), 1)
-            ids, _, updated = self.state()
+            ids, updated = self.state()
             self.assertEqual(ids, ["OLD-1"])
             self.assertLess(updated, time.time() - 50 * 86400)  # not stamped fresh
 
-    def test_all_sources_failing_keeps_timestamp_and_kev(self):
-        (self.feeds / "kev.json").write_text(json.dumps({"vulnerabilities": []}))
-        self.assertEqual(self.run_update(), 2)  # missing zip, empty KEV
-        ids, kev, updated = self.state()
-        self.assertEqual((ids, kev), (["OLD-1"], ["CVE-OLD"]))
+    def test_a_failing_source_keeps_data_and_timestamp(self):
+        self.assertEqual(self.run_update(), 1)  # missing zip
+        ids, updated = self.state()
+        self.assertEqual(ids, ["OLD-1"])
         self.assertLess(updated, time.time() - 50 * 86400)
+
+    def test_update_contacts_only_osv(self):
+        urls = []
+
+        def record(url, ctx, dest, limit):
+            urls.append(url)
+            raise deps.UpdateError("offline in tests")
+
+        deps.OSV_URL = self._url
+        real, deps._download = deps._download, record
+        try:
+            deps.update(["PyPI", "npm"], log=self.log.append, db=self.dbp)
+        finally:
+            deps._download = real
+        self.assertEqual(urls, ["https://osv-vulnerabilities.storage.googleapis.com/PyPI/all.zip",
+                                "https://osv-vulnerabilities.storage.googleapis.com/npm/all.zip"])
+        self.assertFalse(any("cisa" in m.lower() for m in self.log))
+
+    def test_update_removes_cisa_data_left_by_older_versions(self):
+        con = sqlite3.connect(str(self.dbp))
+        con.executescript("CREATE TABLE kev (cve TEXT PRIMARY KEY); INSERT INTO kev VALUES ('CVE-OLD');"
+                          "INSERT INTO meta VALUES ('kev_updated_at', '1');")
+        con.close()
+        make_zip(self.feeds / "PyPI.zip", [("GHSA-new.json", json.dumps(ADV))])
+        self.assertEqual(self.run_update(), 0)
+        con = sqlite3.connect(str(self.dbp))
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        keys = {r[0] for r in con.execute("SELECT key FROM meta")}
+        con.close()
+        self.assertNotIn("kev", tables)
+        self.assertNotIn("kev_updated_at", keys)
 
     def test_member_size_limit(self):
         make_zip(self.feeds / "PyPI.zip", [("big.json", " " * 5000)])

@@ -94,7 +94,7 @@ class VersionTest(unittest.TestCase):
 
 
 class OfflineDbTest(unittest.TestCase):
-    def test_dependency_finding_with_kev_escalation(self):
+    def test_dependency_finding_from_the_local_db(self):
         tmp = Path(tempfile.mkdtemp())
         db = tmp / "osv.sqlite"
         con = deps._connect(db)
@@ -102,7 +102,6 @@ class OfflineDbTest(unittest.TestCase):
         con.execute("INSERT INTO vulns VALUES (?,?,?,?,?,?,?)",
                     ("npm", "lodash", "GHSA-test", "Prototype pollution", "high", json.dumps(["CVE-2099-0001"]),
                      json.dumps(affected)))
-        con.execute("INSERT INTO kev VALUES ('CVE-2099-0001')")
         con.commit()
         con.close()
         (tmp / "package-lock.json").write_text(json.dumps(
@@ -110,9 +109,9 @@ class OfflineDbTest(unittest.TestCase):
         findings, _, _ = deps.scan(str(tmp), ["package-lock.json"], db=db)
         self.assertEqual(len(findings), 1)
         f = findings[0]
-        self.assertEqual(f.severity, "critical")  # escalated: actively exploited
+        self.assertEqual(f.severity, "high")  # the advisory's own severity, from OSV
         self.assertEqual(f.extra["fixed_in"], "4.17.21")
-        self.assertIn("actively exploited", f.title)
+        self.assertNotIn("kev", f.extra)
 
 
 class LevelTest(unittest.TestCase):

@@ -64,7 +64,7 @@ $ agentharden examples/vulnerable-app
 ```bash
 brew install saideepreddy7781/tap/agentharden                       # macOS and Linux with Homebrew
 pipx install git+https://github.com/saideepreddy7781/agentharden   # or: pip install git+https://...
-agentharden update        # once, while online: OSV advisories and the CISA known-exploited list
+agentharden update        # once in a while, while online: package advisories from OSV.dev
 ```
 
 Python 3.9 or newer, nothing else. Standalone binaries for Linux, macOS and Windows, and a single-file
@@ -155,7 +155,7 @@ Or as a [pre-commit](https://pre-commit.com) hook:
 | Taint flows | Request data reaching SQL, shell, eval, SSRF, file paths, redirects, deserialization, templates, HTML (XSS), NoSQL and deep merges. Python via its AST (Flask, Django, FastAPI, Starlette); JavaScript and TypeScript via scoped line tracking (Express, Koa, Next.js, browser) |
 | Code rules | 63 rules across Python, JS/TS, Go, Java and Kotlin, PHP, Ruby, Dockerfiles, GitHub Actions, Kubernetes and Terraform |
 | Posture | Missing security headers and CSP, rate limiting, input validation, Django deploy settings, lockfiles, pinned versions, non-root containers, CI scanning |
-| Dependencies | npm, pnpm, yarn, bun, PyPI (requirements, Pipfile, poetry, uv, pdm), Go, Maven, Gradle, RubyGems, crates.io and Packagist lockfiles against [OSV.dev](https://osv.dev). Anything on CISA's [Known Exploited Vulnerabilities](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) list becomes critical |
+| Dependencies | npm, pnpm, yarn, bun, PyPI (requirements, Pipfile, poetry, uv, pdm), Go, Maven, Gradle, RubyGems, crates.io and Packagist lockfiles against a local copy of [OSV.dev](https://osv.dev), the only source `agentharden update` downloads from |
 | Optional | [Semgrep](https://semgrep.dev), [Gitleaks](https://github.com/gitleaks/gitleaks), [Bandit](https://github.com/PyCQA/bandit) and [Trivy](https://trivy.dev), used when installed, run with agentharden's own config, results merged |
 
 ### The security audit in the prompt

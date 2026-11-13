@@ -573,7 +573,7 @@ def cmd_doctor() -> int:
     if st["present"]:
         age = f"{st['age_days']:.0f} days old" if st.get("age_days") is not None else "age unknown"
         ecos = ", ".join(f"{k} {v:,}" for k, v in sorted(st["ecosystems"].items()))
-        print(f"  {ok} OSV advisories ({age}): {ecos}; CISA KEV {st['kev']:,} CVEs")
+        print(f"  {ok} OSV advisories ({age}): {ecos}")
     else:
         print(f"  {dash} OSV advisory DB missing: run `agentharden update` once while online")
     for name, path in engines.available().items():
